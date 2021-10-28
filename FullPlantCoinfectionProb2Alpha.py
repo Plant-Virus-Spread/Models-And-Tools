@@ -10,9 +10,11 @@ import random
 from scipy.integrate import odeint
 from scipy.optimize import curve_fit
 from lmfit import minimize, Parameters, Parameter, report_fit
+
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
-import os
 #==================================================================================================
 ''' Put data into a DataFrame '''
 DataFrame = pd.read_csv('Cell_count_data_Tromas_2014.csv')
