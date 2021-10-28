@@ -1,3 +1,9 @@
+'''
+Author: Joshua Miller, 2019
+The 2-alpha probabilistic coinfection model: the best-performing coinfection model which was tested.
+This is fitted to data using the binomial distribution-based likelihood method.
+'''
+#==================================================================================================
 import pandas as pd
 import numpy as np
 import random
@@ -94,6 +100,7 @@ Params.add('psi7', value = .247, min = .0001, max = 1.0000, vary = True)
 Params.add('alphab', value = 10, min = 0, max = 20.0000, vary = True)
 Params.add('alphax', value = 1, min = 0, max = 20.0000, vary = True)
 #==============================================================================
+''' Define the model '''
 def model(Mk, t, parameters):
     V3 = Mk[0]
     B3 = Mk[1]
@@ -193,9 +200,9 @@ def model(Mk, t, parameters):
 
     return [dV3dt, dB3dt, dM3dt, dV5dt, dB5dt, dM5dt, dV6dt, dB6dt, dM6dt, dV7dt, dB7dt, dM7dt]
 #==============================================================================
-''' Add random noise to model prediction to try to recover parameters '''
+''' Compute the nll value for a given set of parameter values '''
 def negLogLike(parameters):
-    # Solve ODE system to get model values; parameters are not yet fitted
+    # Solve ODE system to get model prediction; parameters are not yet fitted
     init = [parameters['V0'].value, parameters['B0'].value ,parameters['M0'].value, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     MM = odeint(model, init, ZERO_DAYS_AXIS, args=(parameters,))
     V3 = MM[:, 0]
@@ -211,14 +218,14 @@ def negLogLike(parameters):
     B7 = MM[:, 10]
     M7 = MM[:, 11]
 
-    nll = 0;
+    nll = 0
     epsilon = 10**-10
     for t in range(4):          # Iterate through days
         for p in range(5):      # Iterate through replicates
-            for k in range(4):
-                Vktp_M = MIXED[20 * t + 4 * p + k][4]      # Number of infected cells
-                Vktp_V = VENUS_ONLY[20 * t + 4 * p + k][4] # Number of infected cells
-                Vktp_B = BFP_ONLY[20 * t + 4 * p + k][4]   # Number of infected cells
+            for k in range(4):  # Iterate through leaves
+                Vktp_M = MIXED[20 * t + 4 * p + k][4]      # Number of coinfected cells
+                Vktp_V = VENUS_ONLY[20 * t + 4 * p + k][4] # Number of Venus-only infected cells
+                Vktp_B = BFP_ONLY[20 * t + 4 * p + k][4]   # Number of BFP-only infected cells
                 Aktp = TOTAL[20 * t + 4 * p + k][3] + TOTAL[20 * t + 4 * p + k][4] # Total number of cells observed
                 Iktp_V3 = V3[t + 1]
                 Iktp_B3 = B3[t + 1]
@@ -232,7 +239,9 @@ def negLogLike(parameters):
                 Iktp_V7 = V7[t + 1]
                 Iktp_B7 = B7[t + 1]
                 Iktp_M7 = M7[t + 1]
-
+                
+                # Essentially checking for 0s which would cause problems due to the logarithms in the nll equation.
+                # Epsilon is user-defined and will replace any of the following quanties with it
                 if (Iktp_M3 < epsilon):
                     Iktp_M3 = epsilon
                 if (Iktp_M3 > 1 - epsilon):
@@ -282,6 +291,7 @@ def negLogLike(parameters):
                 if (Iktp_B7 > 1 - epsilon):
                     Iktp_B7 = 1 - epsilon
 
+                # Calculate the individual nlls for each leaf and virus 'strain'. Sum together to get total nll
                 if (k == 0):
                     nll_M3 = Vktp_M * np.log(Iktp_M3) + (Aktp - Vktp_M) * np.log(1 - Iktp_M3)
                     nll_V3 = Vktp_V * np.log(Iktp_V3) + (Aktp - Vktp_V) * np.log(1 - Iktp_V3)
@@ -303,7 +313,7 @@ def negLogLike(parameters):
                     nll_B7 = Vktp_B * np.log(Iktp_B7) + (Aktp - Vktp_B) * np.log(1 - Iktp_B7)
                     nll += (nll_M7 + nll_V7 + nll_B7)
     
-    return [-nll]
+    return -nll
 #==============================================================================
 ''' Miminize negative log likelihood with differential evolution algorithm '''
 result = minimize(negLogLike, Params, method = 'differential_evolution')
@@ -315,13 +325,12 @@ print("======================================================================")
 report_fit(result)
 print("======================================================================")
 print("======================================================================")
-print("nll / 12 = ", round((nll[0] / 12), 0))
-print("AIC      = ", 2 * result.nvarys + 2 * round((nll[0] / 12), 0))
+print("nll = ", round(nll, 3), ", AIC  = ", round(2 * result.nvarys + 2 * nll, 0))
 print("======================================================================")
 print("======================================================================")
 print("V0     = ", round(result.params['V0'].value, 10))
-print("B0     = ", round(result.params['B0'].value, 6))
-print("M0     = ", round(result.params['M0'].value, 6))
+print("B0     = ", round(result.params['B0'].value, 10))
+print("M0     = ", round(result.params['M0'].value, 10))
 print("bV     = ", round(result.params['bV'].value, 6))
 print("bB     = ", round(result.params['bB'].value, 6))
 print("x5     = ", round(result.params['x5'].value, 6))
@@ -336,7 +345,7 @@ print("alphax = ", round(result.params['alphax'].value, 6))
 print("======================================================================")
 print("======================================================================")
 #==============================================================================
-''' Solve ODE system with fitted parameters from likelihood '''
+''' Solve ODE system with fitted parameters from likelihood method '''
 Llk0 = [result.params['V0'].value, result.params['B0'], result.params['M0'], 0, 0, 0, 0, 0, 0, 0, 0, 0]
 LL = odeint(model, Llk0, t, args=(result.params,))
 V3 = LL[:, 0]
@@ -355,7 +364,7 @@ M7 = LL[:, 11]
 ''' Plot experimental data and model curves '''
 for leaf_iterator in range(4):
 #==============================================================================
-    ''' Empty bois '''
+    ''' Initialize arrays which will be used later '''
     MIXED_LEAFK = np.empty(((round(len(MIXED_RATIOS) / 4)), 1), float)
     VENUS_LEAFK = np.empty(((round(len(VENUS_RATIOS) / 4)), 1), float)
     BFP_LEAFK = np.empty(((round(len(BFP_RATIOS) / 4)), 1), float)
@@ -452,6 +461,7 @@ for leaf_iterator in range(4):
         ax[1][1].scatter(DAYS_AXIS, BFP_AV, color = COLORS[1], s = 200, marker = '_')
         ax[1][1].scatter(DAYS_AXIS, MIXED_AV, color = COLORS[2], s = 200, marker = '_')
 #==============================================================================
+''' Set bounds, scale, legends, and labels '''
 for i in range(2):
     for j in range(2):
         ax[i][j].set_xlim(0, 12)
@@ -466,6 +476,5 @@ for i in range(2):
 plt.show()
 #==============================================================================
 ''' Save figure '''
-save_path = r'C:\Users\joshm\OneDrive\Documents\Plant_Gang\Final_Figures' # Path to where you want the file to be saved
 filename = "FullPlantCoinfectionProb2Alpha.pdf" # Specify filename
-fig.savefig(os.path.join(save_path, filename), bbox_inches = 'tight', pad_inches = 0) # Save figure in the new directory
+fig.savefig(filename, bbox_inches = 'tight', pad_inches = 0) # Save figure in the new directory
