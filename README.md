@@ -1,2 +1,1 @@
-# Tromas-Parameter-Estimation
-The files in this repository use the likelihood formula described in Tromas et. al.'s paper to try to reproduce the values used in their model
+This repository contains a code which fits Tromas et. al.'s original model to data using a binomial distribution-based likelihood method as well as a log-transform least-squares method. We also include the 2-alpha probabilistic model which is fitted using the binomial distribution-based likelihood as well. Finally we include a simple UI which allows the user to change parameter values of the 2-alpha probabilistic model and see in real time how these changes affect the model's curve shapes. The experimental data on which these models are fitted are included also.
