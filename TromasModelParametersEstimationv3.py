@@ -33,6 +33,14 @@ Col 3: Number of unifected cells
 Col 4: Number of total infected cells
 '''
 #==============================================================================
+''' Get limit of detection values for each strain '''
+T = []
+TT = TROMAS_DATA[:, 4] / (TROMAS_DATA[:, 3] + TROMAS_DATA[:, 4])
+for x in TT:
+    if not (x == 0):
+        T.append(x)
+lod = min(T)
+#==============================================================================
 ''' Create subplot array '''
 fig, ax = plt.subplots(2, 2, figsize = (10, 10))
 fig.subplots_adjust(hspace = .25, wspace = .2)
@@ -140,10 +148,8 @@ def negLogLike(parameters):
 
                 if (Iktp <= 0):
                     Iktp = epsilon
-                    #print("AHHHHHHHHH")
                 elif (Iktp >= 1):
                     Iktp = 1 - epsilon
-                    #print("AHHHHHHHHH")
 
                 nll += Vktp * np.log(Iktp) + (Aktp - Vktp) * np.log(1 - Iktp)
     
@@ -209,7 +215,34 @@ def logResiduals(parameters):
                 elif (Iktp >= 1):
                     Iktp = 1 - epsilon
 
-                # Compute the residual
+                if (Vktp == 0):
+                    residuals.append(np.log(lod) - np.log(Iktp))
+                else:
+                    residuals.append(np.log(Vktp / Aktp) - np.log(Iktp))
+    
+    return residuals
+#==============================================================================
+''' Generate residuals for least squares fitting '''
+def logResidualsTest(parameters):
+    residuals = []
+
+    # Solve ODE system to get model values; parameters are not yet fitted
+    Lsk0 = [parameters['I0'].value, 0, 0, 0]
+    MM = odeint(model, Lsk0, ZERO_DAYS_AXIS, args=(parameters,))
+
+    epsilon = 10**-10
+    for t in range(4):
+        for p in range(5):          # Iterate through days
+            for k in range(4):      # Iterate through replicates
+                Vktp = TROMAS_DATA[20 * t + 4 * p + k][4]  # Number of infected cells
+                Aktp = TROMAS_DATA[20 * t + 4 * p + k][3] + Vktp   # Number of total cells
+                Iktp = MM[t + 1][k]                                # Frequency of cellular infection
+                
+                if (Iktp <= 0):
+                    Iktp = epsilon
+                elif (Iktp >= 1):
+                    Iktp = 1 - epsilon
+
                 if not (Vktp == 0):
                     residuals.append(np.log(Vktp / Aktp) - np.log(Iktp))
     
@@ -224,7 +257,10 @@ result_leastsq = minimize(logResiduals, lsqParams, method = 'least_squares')
 result_leastsq_raw = minimize(residuals, lsqParams, method = 'least_squares')
 #==============================================================================
 ''' Get residuals for Shapiro test '''
+RES_NLL = residualsTest(result_likelihood.params)
 RES_RAW = residualsTest(result_leastsq_raw.params)
+RES_LOG_No0 = logResidualsTest(result_leastsq.params)
+RES_LOG_LOD = logResiduals(result_leastsq.params)
 #==============================================================================
 ''' Compare fitted values with those in Tromas' paper '''
 print("======================================================================")
@@ -235,20 +271,23 @@ print("======================================================================")
 report_fit(result_leastsq)
 print("======================================================================")
 print("======================================================================")
-print('LS Shapiro = ', stats.shapiro(RES_RAW), 'LS Shapiro (log) = ', stats.shapiro(logResiduals(result_leastsq.params)))
+print('nll Shapiro (raw) = ', stats.shapiro(RES_NLL),  
+      '\nLS Shapiro (raw) = ', stats.shapiro(RES_RAW), 
+      '\nLS Shapiro (log, no 0) = ', stats.shapiro(RES_LOG_No0),  
+      '\nLS Shapiro (log, 0=LOD) = ', stats.shapiro(RES_LOG_LOD))
 print("======================================================================")
 print("======================================================================")
 print("nll (Like params) = ", round(negLogLike(result_likelihood.params)),  
       ' | nll (LS params) = ', round(negLogLike(result_leastsq.params)), 
-      ' | SSR - raw (Like params) = ', sum(np.power(residuals(result_likelihood.params), 2)), 
-      ' | SSR - raw (LS params) = ', sum(np.power(residuals(result_leastsq.params), 2)), 
-      ' | SSR - log (LS params (log)) = ', sum(np.power(logResiduals(result_leastsq.params), 2)))
+      ' | SSR - raw (Like params) = ', sum(np.power(RES_NLL, 2)), 
+      ' | SSR - raw (LS params) = ', sum(np.power(RES_RAW, 2)), 
+      ' | SSR - log (LS params (log)) = ', sum(np.power(RES_LOG_LOD, 2)))
 
 print("AIC_nll (Like params) = ", round(2 * negLogLike(result_likelihood.params) + 2 * result_likelihood.nvarys), 
       ' | AIC_nll (LS params) = ',  round(2 * negLogLike(result_leastsq.params) + 2 * result_leastsq.nvarys), 
-      ' | AIC_SSR - raw (Like params) = ', round(result_likelihood.ndata * np.log(sum(np.power(residuals(result_likelihood.params), 2))[0] / result_likelihood.ndata) + 2 * result_likelihood.nvarys), 
-      ' | AIC_SSR - raw (LS params) = ', round(result_leastsq.ndata * np.log(sum(np.power(residuals(result_leastsq.params), 2))[0] / result_leastsq.ndata) + 2 * result_leastsq.nvarys),
-      ' | AIC_SSR - log (LS params (log)) = ', round(result_leastsq.ndata * np.log(sum(np.power(logResiduals(result_leastsq.params), 2)) / result_leastsq.ndata) + 2 * result_leastsq.nvarys))
+      ' | AIC_SSR - raw (Like params) = ', round(result_likelihood.ndata * np.log(sum(np.power(RES_NLL, 2)) / result_likelihood.ndata) + 2 * result_likelihood.nvarys), 
+      ' | AIC_SSR - raw (LS params) = ', round(result_leastsq.ndata * np.log(sum(np.power(RES_RAW, 2)) / result_leastsq.ndata) + 2 * result_leastsq.nvarys),
+      ' | AIC_SSR - log (LS params (log)) = ', round(result_leastsq.ndata * np.log(sum(np.power(RES_LOG_LOD, 2)) / result_leastsq.ndata) + 2 * result_leastsq.nvarys))
 print("======================================================================")
 print("======================================================================")
 print("NLL I0     = ", round(result_likelihood.params['I0'].value, 6), ", LS I0     = ", round(result_leastsq_raw.params['I0'].value, 6), ", LS I0 (log)    = ", round(result_leastsq.params['I0'].value, 6))
@@ -326,7 +365,7 @@ for leaf_iterator in range(4):
         ax[0][0].scatter(DAYS_AXIS, LEAF_DATA[0, :], s = 80, facecolors = 'none', edgecolors = 'b', label = "Data") # Plot copy to get one label
 
         ax[0][0].plot(t, LL3, color = 'green', label = "NegLogLike")
-        #ax[0][0].plot(t, LS3, '--', color = 'orange', label = "Least Squares (raw)")
+        ax[0][0].plot(t, LS3, '--', color = 'orange', label = "Least Squares (raw)")
         ax[0][0].plot(t, LLS3, '-.', color = 'gold', label = "Least Squares (log)")
 
         ax[0][0].scatter(DAYS_AXIS, AVERAGES, s = 120, color = 'red', marker = '_', label = "Average")
@@ -337,7 +376,7 @@ for leaf_iterator in range(4):
         ax[0][1].scatter(DAYS_AXIS, LEAF_DATA[0, :], s = 80, facecolors = 'none', edgecolors = 'b', label = "Data") # Plot copy to get one label
         
         ax[0][1].plot(t, LL5, color = 'green', label = "NegLogLike")
-        #ax[0][1].plot(t, LS5, '--', color = 'orange', label = "Least Squares (raw)")
+        ax[0][1].plot(t, LS5, '--', color = 'orange', label = "Least Squares (raw)")
         ax[0][1].plot(t, LLS5, '-.', color = 'gold', label = "Least Squares (log)")
 
         ax[0][1].scatter(DAYS_AXIS, AVERAGES, s = 120, color = 'red', marker = '_', label = "Average")
@@ -348,7 +387,7 @@ for leaf_iterator in range(4):
         ax[1][0].scatter(DAYS_AXIS, LEAF_DATA[0, :], s = 80, facecolors = 'none', edgecolors = 'b', label = "Data") # Plot copy to get one label
 
         ax[1][0].plot(t, LL6, color = 'green', label = "NegLogLike")
-        #ax[1][0].plot(t, LS6, '--', color = 'orange', label = "Least Squares (raw)")
+        ax[1][0].plot(t, LS6, '--', color = 'orange', label = "Least Squares (raw)")
         ax[1][0].plot(t, LLS6, '-.', color = 'gold', label = "Least Squares (log)")
 
         ax[1][0].scatter(DAYS_AXIS, AVERAGES, s = 120, color = 'red', marker = '_', label = "Average")
@@ -359,7 +398,7 @@ for leaf_iterator in range(4):
         ax[1][1].scatter(DAYS_AXIS, LEAF_DATA[0, :], s = 80, facecolors = 'none', edgecolors = 'b', label = "Data") # Plot copy to get one label
         
         ax[1][1].plot(t, LL7, color = 'green', label = "NegLogLike")
-        #ax[1][1].plot(t, LS7, '--', color = 'orange', label = "Least Squares (raw)")
+        ax[1][1].plot(t, LS7, '--', color = 'orange', label = "Least Squares (raw)")
         ax[1][1].plot(t, LLS7, '-.', color = 'gold', label = "Least Squares (log)")
 
         ax[1][1].scatter(DAYS_AXIS, AVERAGES, s = 120, color = 'red', marker = '_', label = "Average")
@@ -379,5 +418,5 @@ for i in range(2):
 plt.show()
 #==============================================================================
 ''' Save figure '''
-filename = "TromasModelLogLSnoRawLinScale.pdf" # Specify filename
+filename = "TromasModelLog.pdf" # Specify filename
 fig.savefig(filename, bbox_inches = 'tight', pad_inches = 0) # Save figure in the new directory
